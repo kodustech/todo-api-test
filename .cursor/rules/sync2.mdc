@@ -4,6 +4,6 @@ globs:
 alwaysApply: true
 ---
 
-Quando alterar arquivos de /service/auth tem que ter teste acompanhando.
+Quando alterar arquivos de /service/auth tem que ter teste acompanhando. O teste temq ue ser unitário e end-to -end.
 
 @kody-sync

@@ -1,0 +1,9 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+
+Sempre usar try catch quando for arquivos da pasta /service/auth
+
+# @kody-sync

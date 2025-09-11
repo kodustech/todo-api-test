@@ -1,0 +1,9 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+
+Quando alterar arquivos de /service/auth tem que ter teste acompanhando.
+
+@kody-sync

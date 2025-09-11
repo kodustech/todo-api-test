@@ -1,0 +1,7 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+
+Nunca usar try catch

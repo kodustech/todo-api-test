@@ -4,4 +4,4 @@ globs:
 alwaysApply: true
 ---
 
-Sempre rodar usando npm start ou docker-start
+Sempre rodar usando npm start ou docker-start. Nunca usar o npm run build

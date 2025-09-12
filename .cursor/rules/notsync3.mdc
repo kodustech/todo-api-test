@@ -4,4 +4,4 @@ globs:
 alwaysApply: true
 ---
 
-Sempre usar o docker
+Sempre usar o docker compose e build

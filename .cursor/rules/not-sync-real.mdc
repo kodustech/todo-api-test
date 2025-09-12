@@ -1,0 +1,9 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+
+todas as variaveis tem que começar com _
+
+@kody-ignore

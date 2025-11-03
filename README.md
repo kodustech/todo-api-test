@@ -11,9 +11,24 @@ bun run src/server.ts
 
 > Use `bun run --watch src/server.ts` para modo de desenvolvimento com recarga automática.
 
+### Configuração
+- Variáveis de ambiente:
+  - `PORT` (opcional): porta do servidor. Padrão `3000`.
+  - `DATA_FILE` (opcional): caminho do arquivo de persistência. Padrão `data/todos.json`.
+
+Os dados agora são persistidos em disco (JSON). Ao iniciar, a API carrega o arquivo, e a cada criação/atualização/remoção grava novamente. As datas são armazenadas em ISO 8601.
+
 ### Rotas disponíveis
 - `GET /health` — Verifica se a API está respondendo.
-- `GET /todos` — Lista todos os itens; use `GET /todos?completed=true|false` para filtrar por status.
+- `GET /` — Mensagem simples de boas-vindas.
+- `GET /todos` — Lista itens.
+  - Parâmetros de query:
+    - `completed=true|false` (opcional) — filtra por status.
+    - `limit` (opcional, padrão `50`, máx `1000`) — paginação.
+    - `offset` (opcional, padrão `0`) — paginação.
+    - `sort` (opcional: `id|createdAt|updatedAt|title`, padrão `id`).
+    - `order` (opcional: `asc|desc`, padrão `asc`).
+  - Cabeçalhos de resposta: `X-Total-Count` com o total antes da paginação.
 - `POST /todos` — Cria um novo todo. Corpo esperado:
   ```json
   {
@@ -24,7 +39,13 @@ bun run src/server.ts
 - `GET /todos/:id` — Recupera um item pelo `id`.
 - `PATCH /todos/:id` — Atualiza campos `title` e/ou `completed`.
 - `DELETE /todos/:id` — Remove um item.
-
-> O armazenamento é apenas em memória, ideal para prototipação rápida.
+  - Use `DELETE /todos?completed=true|false` para remover em massa por status.
 
 > As respostas incluem `createdAt` e `updatedAt` em formato ISO 8601.
+
+### Logs
+- Cada requisição gera um log com `X-Request-Id`, método, rota, status e duração (ms).
+- Todas as respostas incluem `X-Request-Id`.
+
+### Limite de Payload
+- O corpo JSON é limitado a ~1MB. Requisições maiores retornam `413 Payload Too Large`.

@@ -1,0 +1,11 @@
+# dependencies
+node_modules/
+
+# Bun lockfile
+bun.lockb
+
+# data files
+data/
+
+# macOS
+.DS_Store

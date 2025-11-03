@@ -1,4 +1,4 @@
-import { todoStore, type CreateTodoInput } from "./todoStore";
+import { todoStore, type CreateTodoInput, initTodoStore } from "./todoStore";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -134,120 +134,153 @@ const parseUpdateInput = (payload: unknown) => {
   return { ok: true as const, value: update };
 };
 
+await initTodoStore();
+
 const server = Bun.serve({
   port: Number(process.env.PORT ?? 3000),
   async fetch(req) {
+    const start = Date.now();
     const url = new URL(req.url);
 
-    if (req.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: corsHeaders });
+    const handle = async () => {
+      if (req.method === "OPTIONS") {
+        return new Response(null, { status: 204, headers: corsHeaders });
+      }
+
+      if (req.method === "GET" && url.pathname === "/") {
+        return text("Todo API (Bun) — veja /health e /todos");
+      }
+
+      if (req.method === "GET" && url.pathname === "/health") {
+        return text("ok");
+      }
+
+      const todosMatch = todosPattern.exec(req.url);
+      if (todosMatch) {
+        if (req.method === "GET") {
+          const completedParam = url.searchParams.get("completed");
+          if (
+            completedParam !== null &&
+            completedParam !== "true" &&
+            completedParam !== "false"
+          ) {
+            return json(
+              {
+                error: "Parameter 'completed' must be either 'true' or 'false'",
+              },
+              { status: 400 },
+            );
+          }
+
+          const filter =
+            completedParam === null
+              ? {}
+              : { completed: completedParam === "true" };
+
+          return json(todoStore.list(filter));
+        }
+
+        if (req.method === "POST") {
+          if (!ensureJson(req)) {
+            return json(
+              { error: "Content-Type must be application/json" },
+              { status: 415 },
+            );
+          }
+
+          const parsed = await safeJsonBody(req);
+          if (!parsed.ok) {
+            return json({ error: parsed.error }, { status: 400 });
+          }
+
+          const validated = parseCreateInput(parsed.value);
+          if (!validated.ok) {
+            return json({ error: validated.error }, { status: 400 });
+          }
+
+          const todo = todoStore.create(validated.value);
+          return json(todo, { status: 201 });
+        }
+
+        return methodNotAllowed();
+      }
+
+      const todoMatch = todoIdPattern.exec(req.url);
+      if (todoMatch) {
+        const idParam = todoMatch.pathname.groups.id;
+        const id = Number.parseInt(idParam ?? "", 10);
+        if (!Number.isFinite(id)) {
+          return json({ error: "Invalid id" }, { status: 400 });
+        }
+
+        const existing = todoStore.get(id);
+        if (!existing) {
+          return notFound();
+        }
+
+        if (req.method === "GET") {
+          return json(existing);
+        }
+
+        if (req.method === "PATCH") {
+          if (!ensureJson(req)) {
+            return json(
+              { error: "Content-Type must be application/json" },
+              { status: 415 },
+            );
+          }
+
+          const parsed = await safeJsonBody(req);
+          if (!parsed.ok) {
+            return json({ error: parsed.error }, { status: 400 });
+          }
+
+          const validated = parseUpdateInput(parsed.value);
+          if (!validated.ok) {
+            return json({ error: validated.error }, { status: 400 });
+          }
+
+          const updated = todoStore.update(id, validated.value);
+          return json(updated);
+        }
+
+        if (req.method === "DELETE") {
+          todoStore.delete(id);
+          return noContent();
+        }
+
+        return methodNotAllowed();
+      }
+
+      return notFound();
+    };
+
+    try {
+      const res = await handle();
+      const duration = Date.now() - start;
+      console.log(`${req.method} ${url.pathname} -> ${res.status} ${duration}ms`);
+      return res;
+    } catch (err) {
+      console.error("Erro inesperado:", err);
+      const duration = Date.now() - start;
+      console.log(`${req.method} ${url.pathname} -> 500 ${duration}ms`);
+      return json({ error: "Internal Server Error" }, { status: 500 });
     }
-
-    if (req.method === "GET" && url.pathname === "/health") {
-      return text("ok");
-    }
-
-    const todosMatch = todosPattern.exec(req.url);
-    if (todosMatch) {
-      if (req.method === "GET") {
-        const completedParam = url.searchParams.get("completed");
-        if (
-          completedParam !== null &&
-          completedParam !== "true" &&
-          completedParam !== "false"
-        ) {
-          return json(
-            {
-              error: "Parameter 'completed' must be either 'true' or 'false'",
-            },
-            { status: 400 },
-          );
-        }
-
-        const filter =
-          completedParam === null
-            ? {}
-            : { completed: completedParam === "true" };
-
-        return json(todoStore.list(filter));
-      }
-
-      if (req.method === "POST") {
-        if (!ensureJson(req)) {
-          return json(
-            { error: "Content-Type must be application/json" },
-            { status: 415 },
-          );
-        }
-
-        const parsed = await safeJsonBody(req);
-        if (!parsed.ok) {
-          return json({ error: parsed.error }, { status: 400 });
-        }
-
-        const validated = parseCreateInput(parsed.value);
-        if (!validated.ok) {
-          return json({ error: validated.error }, { status: 400 });
-        }
-
-        const todo = todoStore.create(validated.value);
-        return json(todo, { status: 201 });
-      }
-
-      return methodNotAllowed();
-    }
-
-    const todoMatch = todoIdPattern.exec(req.url);
-    if (todoMatch) {
-      const idParam = todoMatch.pathname.groups.id;
-      const id = Number.parseInt(idParam ?? "", 10);
-      if (!Number.isFinite(id)) {
-        return json({ error: "Invalid id" }, { status: 400 });
-      }
-
-      const existing = todoStore.get(id);
-      if (!existing) {
-        return notFound();
-      }
-
-      if (req.method === "GET") {
-        return json(existing);
-      }
-
-      if (req.method === "PATCH") {
-        if (!ensureJson(req)) {
-          return json(
-            { error: "Content-Type must be application/json" },
-            { status: 415 },
-          );
-        }
-
-        const parsed = await safeJsonBody(req);
-        if (!parsed.ok) {
-          return json({ error: parsed.error }, { status: 400 });
-        }
-
-        const validated = parseUpdateInput(parsed.value);
-        if (!validated.ok) {
-          return json({ error: validated.error }, { status: 400 });
-        }
-
-        const updated = todoStore.update(id, validated.value);
-        return json(updated);
-      }
-
-      if (req.method === "DELETE") {
-        todoStore.delete(id);
-        return noContent();
-      }
-
-      return methodNotAllowed();
-    }
-
-    return notFound();
   },
 });
 
 console.log(
   `Todo API ouvindo em http://localhost:${server.port} (pid ${process.pid})`,
 );
+
+// Encerramento gracioso
+const shutdown = (signal: string) => {
+  console.log(`Recebido ${signal}, finalizando...`);
+  try {
+    server.stop();
+  } catch {}
+  process.exit(0);
+};
+
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));

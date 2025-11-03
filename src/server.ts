@@ -41,17 +41,27 @@ const notFound = () => json({ error: "Not Found" }, { status: 404 });
 const noContent = (status = 204) =>
   new Response(null, { status, headers: corsHeaders });
 
-const safeJsonBody = async (req: Request) => {
+const safeJsonBody = async (
+  req: Request,
+  opts: { maxBytes?: number } = {},
+) => {
   try {
-    return {
-      ok: true as const,
-      value: (await req.json()) as unknown,
-    };
+    const max = opts.maxBytes ?? 1_000_000; // 1MB default
+    const lenHeader = req.headers.get("content-length");
+    if (lenHeader) {
+      const len = Number.parseInt(lenHeader, 10);
+      if (Number.isFinite(len) && len > max) {
+        return { ok: false as const, error: "Payload Too Large", status: 413 };
+      }
+    }
+    const textBody = await req.text();
+    const bytes = new TextEncoder().encode(textBody).length;
+    if (bytes > max) {
+      return { ok: false as const, error: "Payload Too Large", status: 413 };
+    }
+    return { ok: true as const, value: JSON.parse(textBody) as unknown };
   } catch {
-    return {
-      ok: false as const,
-      error: "Invalid JSON body",
-    };
+    return { ok: false as const, error: "Invalid JSON body", status: 400 };
   }
 };
 
@@ -140,6 +150,7 @@ const server = Bun.serve({
   port: Number(process.env.PORT ?? 3000),
   async fetch(req) {
     const start = Date.now();
+    const requestId = crypto.randomUUID();
     const url = new URL(req.url);
 
     const handle = async () => {
@@ -159,6 +170,10 @@ const server = Bun.serve({
       if (todosMatch) {
         if (req.method === "GET") {
           const completedParam = url.searchParams.get("completed");
+          const limitParam = url.searchParams.get("limit");
+          const offsetParam = url.searchParams.get("offset");
+          const sortBy = url.searchParams.get("sort") ?? undefined;
+          const order = url.searchParams.get("order") ?? undefined;
           if (
             completedParam !== null &&
             completedParam !== "true" &&
@@ -177,7 +192,25 @@ const server = Bun.serve({
               ? {}
               : { completed: completedParam === "true" };
 
-          return json(todoStore.list(filter));
+          const maxLimit = 1000;
+          const limit = Math.min(
+            maxLimit,
+            Math.max(0, Number.parseInt(limitParam ?? "50", 10) || 50),
+          );
+          const offset = Math.max(0, Number.parseInt(offsetParam ?? "0", 10) || 0);
+          const validSort = new Set(["id", "createdAt", "updatedAt", "title"]);
+          const validOrder = new Set(["asc", "desc"]);
+          const sortOpt = validSort.has(String(sortBy)) ? (sortBy as any) : "id";
+          const orderOpt = validOrder.has(String(order)) ? (order as any) : "asc";
+
+          const { items, total } = todoStore.list(filter, {
+            limit,
+            offset,
+            sortBy: sortOpt,
+            order: orderOpt,
+          });
+
+          return json(items, { headers: { "X-Total-Count": String(total) } });
         }
 
         if (req.method === "POST") {
@@ -190,7 +223,7 @@ const server = Bun.serve({
 
           const parsed = await safeJsonBody(req);
           if (!parsed.ok) {
-            return json({ error: parsed.error }, { status: 400 });
+            return json({ error: parsed.error }, { status: parsed.status ?? 400 });
           }
 
           const validated = parseCreateInput(parsed.value);
@@ -200,6 +233,23 @@ const server = Bun.serve({
 
           const todo = todoStore.create(validated.value);
           return json(todo, { status: 201 });
+        }
+
+        if (req.method === "DELETE") {
+          const completedParam = url.searchParams.get("completed");
+          if (
+            completedParam !== "true" &&
+            completedParam !== "false"
+          ) {
+            return json(
+              { error: "Parameter 'completed' must be 'true' or 'false'" },
+              { status: 400 },
+            );
+          }
+          const removed = todoStore.deleteMany({
+            completed: completedParam === "true",
+          });
+          return json({ removed });
         }
 
         return methodNotAllowed();
@@ -232,7 +282,7 @@ const server = Bun.serve({
 
           const parsed = await safeJsonBody(req);
           if (!parsed.ok) {
-            return json({ error: parsed.error }, { status: 400 });
+            return json({ error: parsed.error }, { status: parsed.status ?? 400 });
           }
 
           const validated = parseUpdateInput(parsed.value);
@@ -258,13 +308,20 @@ const server = Bun.serve({
     try {
       const res = await handle();
       const duration = Date.now() - start;
-      console.log(`${req.method} ${url.pathname} -> ${res.status} ${duration}ms`);
-      return res;
+      const headers = new Headers(res.headers);
+      headers.set("X-Request-Id", requestId);
+      console.log(
+        `${requestId} ${req.method} ${url.pathname} -> ${res.status} ${duration}ms`,
+      );
+      return new Response(res.body, { status: res.status, headers });
     } catch (err) {
       console.error("Erro inesperado:", err);
       const duration = Date.now() - start;
-      console.log(`${req.method} ${url.pathname} -> 500 ${duration}ms`);
-      return json({ error: "Internal Server Error" }, { status: 500 });
+      console.log(`${requestId} ${req.method} ${url.pathname} -> 500 ${duration}ms`);
+      return json(
+        { error: "Internal Server Error" },
+        { status: 500, headers: { "X-Request-Id": requestId } },
+      );
     }
   },
 });

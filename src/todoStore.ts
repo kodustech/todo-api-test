@@ -62,13 +62,54 @@ class TodoStore {
     }
   }
 
-  list(filter?: { completed?: boolean }) {
+  list(
+    filter?: { completed?: boolean },
+    options?: {
+      sortBy?: "id" | "createdAt" | "updatedAt" | "title";
+      order?: "asc" | "desc";
+      offset?: number;
+      limit?: number;
+    },
+  ) {
     let items = Array.from(this.#todos.values());
     if (filter?.completed !== undefined) {
       items = items.filter((todo) => todo.completed === filter.completed);
     }
 
-    return items;
+    const total = items.length;
+
+    const sortBy = options?.sortBy ?? "id";
+    const order = options?.order ?? "asc";
+    items.sort((a, b) => {
+      let av: number | string | Date;
+      let bv: number | string | Date;
+      switch (sortBy) {
+        case "createdAt":
+          av = a.createdAt;
+          bv = b.createdAt;
+          break;
+        case "updatedAt":
+          av = a.updatedAt;
+          bv = b.updatedAt;
+          break;
+        case "title":
+          av = a.title.toLowerCase();
+          bv = b.title.toLowerCase();
+          break;
+        case "id":
+        default:
+          av = a.id;
+          bv = b.id;
+      }
+      if (av < (bv as any)) return order === "asc" ? -1 : 1;
+      if (av > (bv as any)) return order === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    const offset = Math.max(0, options?.offset ?? 0);
+    const limit = Math.max(0, options?.limit ?? items.length);
+    const paged = items.slice(offset, offset + limit);
+    return { items: paged, total };
   }
 
   get(id: number) {
@@ -109,6 +150,21 @@ class TodoStore {
     const ok = this.#todos.delete(id);
     if (ok) this.#save().catch((e) => console.error("Erro ao salvar dados:", e));
     return ok;
+  }
+
+  deleteMany(filter?: { completed?: boolean }) {
+    const before = this.#todos.size;
+    if (filter?.completed === undefined) {
+      // no-op: require a filter to avoid accidental wipe
+      return 0;
+    }
+    for (const [id, todo] of this.#todos) {
+      if (todo.completed === filter.completed) this.#todos.delete(id);
+    }
+    const removed = before - this.#todos.size;
+    if (removed > 0)
+      this.#save().catch((e) => console.error("Erro ao salvar dados:", e));
+    return removed;
   }
 
   async #ensureDir() {

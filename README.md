@@ -13,7 +13,7 @@ bun run src/server.ts
 
 ### Rotas disponíveis
 - `GET /health` — Verifica se a API está respondendo.
-- `GET /todos` — Lista todos os itens.
+- `GET /todos` — Lista todos os itens; use `GET /todos?completed=true|false` para filtrar por status.
 - `POST /todos` — Cria um novo todo. Corpo esperado:
   ```json
   {
@@ -26,3 +26,5 @@ bun run src/server.ts
 - `DELETE /todos/:id` — Remove um item.
 
 > O armazenamento é apenas em memória, ideal para prototipação rápida.
+
+> As respostas incluem `createdAt` e `updatedAt` em formato ISO 8601.
